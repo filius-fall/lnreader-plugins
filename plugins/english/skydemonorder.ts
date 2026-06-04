@@ -45,10 +45,30 @@ class SkyDemonOrder implements Plugin.PluginBase {
     }
   }
 
-  private async scrapeNovelList(
-    urls: string[],
-    statusFilter: string,
-  ): Promise<Plugin.NovelItem[]> {
+  private slugToName(slug: string): string {
+    return slug
+      .replace(/^\d+-/, '')
+      .split('-')
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+
+  private cleanName(raw: string, path: string): string {
+    let name = raw
+      .replace(/\d+ ch·[^]*$/i, '')
+      .replace(/\d+\s*(yr|mo|d|h)\s*ago.*$/i, '')
+      .replace(/\d+\.\d+\s*$/g, '')
+      .replace(/Ongoing.*/i, '')
+      .replace(/Complete.*/i, '')
+      .replace(/18\+\s*$/g, '')
+      .trim();
+    if (name.length < 3 || /^\d+$/.test(name) || name === '18+') {
+      name = this.slugToName(path);
+    }
+    return name;
+  }
+
+  private async scrapeNovelList(urls: string[]): Promise<Plugin.NovelItem[]> {
     const novels: Plugin.NovelItem[] = [];
     const seen = new Set<string>();
 
@@ -67,15 +87,12 @@ class SkyDemonOrder implements Plugin.PluginBase {
         if (!path || seen.has(path)) return;
         seen.add(path);
 
-        const text = $(el).text().trim();
-        const name = text
-          .split(/Ongoing|Complete/)[0]
-          .replace(/Return of th$/, 'Return of the Mount Hua Sect')
-          .trim();
-        if (!name || name.length < 3) return;
-
         const img = $(el).find('img').first();
+        const imgAlt = img.attr('alt') || '';
         const cover = img.attr('src') || img.attr('data-src') || defaultCover;
+
+        const rawText = $(el).text().trim();
+        let name = this.cleanName(imgAlt || rawText, path);
 
         novels.push({ name, path, cover });
       });
@@ -89,10 +106,7 @@ class SkyDemonOrder implements Plugin.PluginBase {
     options: Plugin.PopularNovelsOptions<typeof this.filters>,
   ): Promise<Plugin.NovelItem[]> {
     if (pageNo !== 1) return [];
-    return this.scrapeNovelList(
-      [this.site + '/', this.site + '/projects'],
-      options.filters.status.value,
-    );
+    return this.scrapeNovelList([this.site + '/', this.site + '/projects']);
   }
 
   async parseNovel(novelPath: string): Promise<Plugin.SourceNovel> {
@@ -257,10 +271,10 @@ class SkyDemonOrder implements Plugin.PluginBase {
   ): Promise<Plugin.NovelItem[]> {
     if (pageNo !== 1) return [];
 
-    const all = await this.scrapeNovelList(
-      [this.site + '/', this.site + '/projects'],
-      '',
-    );
+    const all = await this.scrapeNovelList([
+      this.site + '/',
+      this.site + '/projects',
+    ]);
 
     const term = searchTerm.toLowerCase();
     const words = term.split(/\s+/).filter(w => w.length > 0);
