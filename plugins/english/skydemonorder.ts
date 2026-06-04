@@ -11,7 +11,7 @@ class SkyDemonOrder implements Plugin.PluginBase {
   name = 'Sky Demon Order';
   icon = 'src/en/skydemonorder/icon.png';
   site = 'https://skydemonorder.com';
-  version = '1.0.0';
+  version = '1.1.0';
 
   imageRequestInit: Plugin.ImageRequestInit = {
     headers: {
