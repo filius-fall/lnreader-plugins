@@ -45,45 +45,54 @@ class SkyDemonOrder implements Plugin.PluginBase {
     }
   }
 
+  private async scrapeNovelList(
+    urls: string[],
+    statusFilter: string,
+  ): Promise<Plugin.NovelItem[]> {
+    const novels: Plugin.NovelItem[] = [];
+    const seen = new Set<string>();
+
+    for (const pageUrl of urls) {
+      const body = await fetchApi(pageUrl, {
+        headers: {
+          'Accept-Encoding': 'gzip, deflate',
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+        },
+      }).then(res => res.text());
+      const $ = parseHTML(body);
+
+      $('a[href*="/projects/"]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        const path = this.extractNovelPath(href);
+        if (!path || seen.has(path)) return;
+        seen.add(path);
+
+        const text = $(el).text().trim();
+        const name = text
+          .split(/Ongoing|Complete/)[0]
+          .replace(/Return of th$/, 'Return of the Mount Hua Sect')
+          .trim();
+        if (!name || name.length < 3) return;
+
+        const img = $(el).find('img').first();
+        const cover = img.attr('src') || img.attr('data-src') || defaultCover;
+
+        novels.push({ name, path, cover });
+      });
+    }
+
+    return novels;
+  }
+
   async popularNovels(
     pageNo: number,
     options: Plugin.PopularNovelsOptions<typeof this.filters>,
   ): Promise<Plugin.NovelItem[]> {
     if (pageNo !== 1) return [];
-
-    const url = `${this.site}/projects`;
-    const body = await fetchApi(url, {
-      headers: { 'Accept-Encoding': 'gzip, deflate' },
-    }).then(res => res.text());
-    const $ = parseHTML(body);
-
-    const novels: Plugin.NovelItem[] = [];
-    const seen = new Set<string>();
-
-    $('a[href*="/projects/"]').each((_, el) => {
-      const href = $(el).attr('href') || '';
-      const path = this.extractNovelPath(href);
-      if (!path || seen.has(path)) return;
-      seen.add(path);
-
-      const text = $(el).text().trim();
-      const name = text.split(/Ongoing|Complete/)[0].trim();
-      if (!name) return;
-
-      const status = text.includes('Complete') ? 'completed' : 'ongoing';
-      if (
-        options.filters.status.value &&
-        options.filters.status.value !== status
-      )
-        return;
-
-      const img = $(el).find('img').first();
-      const cover = img.attr('src') || img.attr('data-src') || defaultCover;
-
-      novels.push({ name, path, cover });
-    });
-
-    return novels;
+    return this.scrapeNovelList(
+      [this.site + '/', this.site + '/projects'],
+      options.filters.status.value,
+    );
   }
 
   async parseNovel(novelPath: string): Promise<Plugin.SourceNovel> {
@@ -248,33 +257,19 @@ class SkyDemonOrder implements Plugin.PluginBase {
   ): Promise<Plugin.NovelItem[]> {
     if (pageNo !== 1) return [];
 
-    const url = `${this.site}/projects`;
-    const body = await fetchApi(url, {
-      headers: { 'Accept-Encoding': 'gzip, deflate' },
-    }).then(res => res.text());
-    const $ = parseHTML(body);
+    const all = await this.scrapeNovelList(
+      [this.site + '/', this.site + '/projects'],
+      '',
+    );
 
-    const novels: Plugin.NovelItem[] = [];
-    const seen = new Set<string>();
     const term = searchTerm.toLowerCase();
+    const words = term.split(/\s+/).filter(w => w.length > 0);
 
-    $('a[href*="/projects/"]').each((_, el) => {
-      const href = $(el).attr('href') || '';
-      const path = this.extractNovelPath(href);
-      if (!path || seen.has(path)) return;
-      seen.add(path);
-
-      const text = $(el).text().trim();
-      const name = text.split(/Ongoing|Complete/)[0].trim();
-      if (!name || !name.toLowerCase().includes(term)) return;
-
-      const img = $(el).find('img').first();
-      const cover = img.attr('src') || img.attr('data-src') || defaultCover;
-
-      novels.push({ name, path, cover });
+    return all.filter(novel => {
+      const nameLower = novel.name.toLowerCase();
+      if (nameLower.includes(term)) return true;
+      return words.every(w => nameLower.includes(w));
     });
-
-    return novels;
   }
 
   resolveUrl = (path: string, isNovel?: boolean) => {
